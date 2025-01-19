@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Character copy area</title>
+    <meta charset="UTF-8">
+    <meta name="description" content="Quickly copy special characters with a single click"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="../sheep3.css">
+    <script src="../sheep3.js" charset="utf-8"></script>
+    <script src="./clipboard.min.js" charset="utf-8"></script>
+    <style>
+      /* https://colorhunt.co/palette/144698 */
+      body {
+        background-color: #103c42;
+        color: #ffe837;
+        margin: 10px;
+        font-size: 0;
+        font-family: 'Roboto', sans-serif;
+      }
+      .card {
+        -webkit-appearance: none;
+        border: none;
+        background: none;
+        font: inherit;
+        color: inherit;
+        border-radius: 8px;
+        padding: 10px;
+        background-color: #02576c;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        display: inline-flex;
+        margin: 10px;
+        justify-content: center;
+        align-items: center;
+        width: 140px;
+        height: 200px;
+        box-sizing: border-box;
+        flex: none;
+        vertical-align: top;
+        cursor: pointer;
+        transition: box-shadow .2s;
+        position: relative;
+        touch-action: none;
+      }
+      .card:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+      }
+      .card:active {
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      }
+      .copyable  {
+        font-size: 60px;
+        text-align: center;
+      }
+      .long .copyable {
+        font-size: 20px;
+        word-wrap: break-word;
+        max-height: 200px;
+        overflow: hidden;
+      }
+      .really-long .copyable {
+        font-size: 10px;
+      }
+      .code-point {
+        color: #05A19C;
+        position: absolute;
+        bottom: 10px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 14px;
+        opacity: 0;
+        transition: opacity .2s;
+      }
+      .card:hover .code-point {
+        opacity: 1;
+      }
+      .add-btn {
+        background-image: url('./material-add_circle_outline.svg');
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: 60px;
+        background-color: transparent;
+        border: 3px solid #02576c;
+        box-shadow: none;
+        transition: background-color .2s, box-shadow .2s;
+      }
+      .add-btn:active {
+        border: 3px solid #02576c;
+        background-color: rgba(2, 87, 108, 0.5);
+      }
+      .corner-btn {
+        width: 36px;
+        height: 36px;
+        -webkit-appearance: none;
+        border: none;
+        background: none;
+        margin: -18px;
+        position: absolute;
+        pointer-events: none;
+        opacity: 0;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-size: 24px;
+        transition: opacity .2s;
+        cursor: pointer;
+        border-radius: 50%;
+      }
+      .card:hover .corner-btn,
+      .card:focus-visible .corner-btn {
+        pointer-events: all;
+        opacity: 0.2;
+      }
+      .card:hover .corner-btn:hover,
+      .corner-btn:focus-visible {
+        opacity: 1;
+      }
+      .remove-btn {
+        background-image: url('./material-remove.svg');
+        top: 0;
+        right: 0;
+      }
+      .placeholder {
+        box-shadow: none;
+        pointer-events: none;
+        background: none;
+        border: 3px solid #05A19C;
+      }
+      .dragging {
+        cursor: grabbing;
+        user-select: none;
+        touch-action: none;
+      }
+      .card.dragged {
+        position: fixed;
+        cursor: unset;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+        z-index: 100;
+      }
+      .card.dragged .corner-btn {
+        opacity: 0;
+      }
+      :focus {
+        outline: none;
+      }
+      :focus-visible {
+        box-shadow: 0 0 0 3px #ffe837;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+let strings = ['—', '–', '×', 'Δ', '¯\\_(ツ)_/¯', '🤔'];
+try {
+  const arr = JSON.parse(localStorage.getItem('[javascripts] charcopy'));
+  if (Array.isArray(arr)) strings = arr;
+} catch (err) {
+  console.error(err);
+}
+
+const MARGIN = 10;
+const WIDTH = 140 + MARGIN * 2;
+const HEIGHT = 200 + MARGIN * 2;
+const MIN_DRAG_RADIUS = 10;
+let dragging = false;
+
+function newCard(str) {
+  const card = document.createElement('button');
+  card.ariaLabel = `Click to copy "${str}"`;
+  card.dataset.clipboardText = str;
+  new ClipboardJS(card, {container: card});
+  card.classList.add('card');
+
+  const char = document.createElement('span');
+  char.classList.add('copyable');
+  char.textContent = str;
+  card.appendChild(char);
+
+  const chars = [...str];
+  const length = chars.length;
+  if (length === 1) {
+    card.appendChild(document.createTextNode(' '));
+    const codePoint = document.createElement('span');
+    codePoint.classList.add('code-point');
+    codePoint.textContent = `U+${chars[0].codePointAt(0).toString(16).padStart(4, '0').toUpperCase()}`;
+    card.appendChild(codePoint);
+  } else {
+    if (length > 1) card.classList.add('long');
+    if (length > 80) card.classList.add('really-long');
+  }
+
+  const removeBtn = document.createElement('button');
+  removeBtn.classList.add('corner-btn');
+  removeBtn.classList.add('remove-btn');
+  removeBtn.ariaLabel = 'Remove';
+  removeBtn.addEventListener('click', e => {
+    if (!e.shiftKey && !confirm('Are you sure you want to remove this?\n\nTip: hold shift and click to skip confirmation.')) {
+      return;
+    }
+    console.log('Removed', str);
+    document.body.removeChild(card);
+    const index = strings.indexOf(str);
+    if (index !== -1) strings.splice(index, 1);
+    localStorage.setItem('[javascripts] charcopy', JSON.stringify(strings));
+  });
+  card.appendChild(removeBtn);
+
+  let pointer;
+  card.addEventListener('pointerdown', e => {
+    if (!pointer) {
+      const rect = card.getBoundingClientRect();
+      pointer = {
+        x: e.clientX,
+        y: e.clientY,
+        offset: {x: e.clientX - rect.left, y: e.clientY - rect.top},
+        id: e.pointerId
+      };
+    }
+  });
+  card.addEventListener('pointermove', e => {
+    if (pointer && pointer.id === e.pointerId) {
+      if (!dragging && Math.hypot(e.clientX - pointer.x, e.clientY - pointer.y) > MIN_DRAG_RADIUS) {
+        dragging = true;
+        card.setPointerCapture(e.pointerId);
+
+        // Get number of columns
+        pointer.cards = [...document.querySelectorAll('.card')];
+        const firstRow = document.elementFromPoint(MARGIN + WIDTH / 2, MARGIN + HEIGHT * 0.5).closest('.card');
+        const secondRow = document.elementFromPoint(MARGIN + WIDTH / 2, MARGIN + HEIGHT * 1.5).closest('.card');
+        pointer.columns = !secondRow
+          ? strings.length
+          : secondRow.classList.contains('add-btn')
+          ? strings.length
+          : strings.indexOf(secondRow.dataset.clipboardText) - strings.indexOf(firstRow.dataset.clipboardText);
+
+        pointer.placeholder = document.createElement('div');
+        pointer.placeholder.classList.add('card');
+        pointer.placeholder.classList.add('placeholder');
+        document.body.insertBefore(pointer.placeholder, card);
+
+        document.body.classList.add('dragging');
+        card.classList.add('dragged');
+      }
+      if (dragging) {
+        const {offset, columns, placeholder} = pointer;
+
+        if (!pointer.cards) {
+          pointer.cards = [...document.querySelectorAll('.card:not(.dragged)')];
+        }
+
+        const x = e.clientX - offset.x;
+        const y = e.clientY - offset.y;
+        const grid = {
+          x: Math.floor(Math.max(x + window.scrollX + WIDTH / 2 - MARGIN, 0) / WIDTH),
+          y: Math.floor(Math.max(y + window.scrollY + HEIGHT / 2 - MARGIN, 0) / HEIGHT)
+        };
+        const index = Math.min(
+          Math.min(grid.x, columns - 1) + Math.min(grid.y, Math.ceil(strings.length / columns) - 1) * columns,
+          strings.length - 1
+        );
+
+        card.style.left = x + 'px';
+        card.style.top = y + 'px';
+
+        if (strings[index] !== str) {
+          const oldIndex = strings.indexOf(str);
+          if (oldIndex < index) {
+            // Moving the placeholder will also move everything left, so need to
+            // do index + 1
+            document.body.insertBefore(placeholder, pointer.cards[index + 1]);
+            strings.splice(oldIndex, 1);
+            strings.splice(index, 0, str);
+          } else {
+            document.body.insertBefore(placeholder, pointer.cards[index]);
+            strings.splice(oldIndex, 1);
+            strings.splice(index, 0, str);
+          }
+          pointer.cards = null;
+        }
+      }
+    }
+  });
+  const handlePointerEnd = e => {
+    if (pointer && pointer.id === e.pointerId) {
+      if (dragging) {
+        document.body.classList.remove('dragging');
+        card.classList.remove('dragged');
+        document.body.replaceChild(card, pointer.placeholder);
+        card.style.left = null;
+        card.style.top = null;
+        dragging = false;
+        localStorage.setItem('[javascripts] charcopy', JSON.stringify(strings));
+      }
+      pointer = null;
+    }
+  };
+  card.addEventListener('pointerup', handlePointerEnd);
+  card.addEventListener('pointercancel', handlePointerEnd);
+
+  return card;
+}
+
+const fragment = document.createDocumentFragment();
+strings.forEach(str => {
+  fragment.appendChild(newCard(str));
+});
+
+const addCard = document.createElement('button');
+addCard.ariaLabel = 'Add character or copypasta';
+addCard.classList.add('card');
+addCard.classList.add('add-btn');
+addCard.addEventListener('click', e => {
+  let newStr = prompt('Enter the character/copypasta you want to add.\n\nYou can also use U+XXXX to add a character by its Unicode code point.');
+  if (!newStr) {
+    return;
+  }
+  if (newStr.startsWith('U+')) {
+    try {
+      newStr = String.fromCodePoint(parseInt(newStr.slice(2), 16));
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  if (!strings.includes(newStr)) {
+    strings.push(newStr);
+    document.body.insertBefore(newCard(newStr), addCard);
+    localStorage.setItem('[javascripts] charcopy', JSON.stringify(strings));
+  }
+});
+fragment.appendChild(addCard);
+
+document.body.appendChild(fragment);
+    </script>
+  </body>
+</html>

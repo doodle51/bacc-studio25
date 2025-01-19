@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Chop an image into squares</title>
+    <meta
+      name="description"
+      content="To turn a large image into smaller Discord emoji"
+    />
+    <meta name="theme-color" content="#4fa1a7" />
+
+    <link rel="stylesheet" type="text/css" href="/sheep3.css" />
+    <link rel="stylesheet" type="text/css" href="/reform/v1/index.css" />
+    <script src="/sheep3.js" charset="utf-8"></script>
+
+    <style>
+      .output-content {
+        display: flex;
+        overflow: auto;
+        max-height: calc(70vh + 40px);
+        padding: 10px;
+      }
+      .emoji-grid {
+        display: grid;
+        margin: auto;
+        border: 1px solid var(--line);
+      }
+      .emoji {
+        /* For some reason without this, it causes scrollbars to appear on hover
+              */
+        transform: scale(1);
+        transition: transform 0.2s;
+      }
+      .download:hover .emoji {
+        transform: scale(0.8);
+      }
+    </style>
+  </head>
+  <body>
+    <form class="main" role="main">
+      <h1>Chop image into squares</h1>
+      <p>
+        I made this to chop an image into multiple Discord emoji, but you can
+        also use this to make slides for Instagram posts so the slides form a
+        <a class="link" href="https://www.instagram.com/p/CwrBu2kLIds/"
+          >very long continuous image</a
+        >.
+      </p>
+      <div class="two-col-io reform:io">
+        <label class="input-controls file">
+          <input
+            type="file"
+            name="preview"
+            accept="image/*"
+            class="hidden-accessible reform:image-input reform:paste-target"
+          />
+          <span class="icon icon-upload"></span>
+          <span class="file-label">Choose, drop, or paste an image</span>
+          <span class="file-name">No file selected</span>
+        </label>
+        <div class="image-content input-content"><canvas></canvas></div>
+        <div class="output-content">
+          <div
+            class="emoji-grid"
+            id="output"
+            data-deps="preview rows cols size fit"
+          ></div>
+        </div>
+        <div class="output-controls">
+          <a class="file download">
+            <span class="icon icon-download"></span>
+            <span class="file-label">Download</span>
+            <span class="file-name">No file available</span>
+          </a>
+        </div>
+      </div>
+      <div class="cols">
+        <label class="field-label">
+          <span class="label-primary">Rows</span>
+          <input type="number" name="rows" value="3" min="1" />
+        </label>
+        <label class="field-label">
+          <span class="label-primary">Columns</span>
+          <input type="number" name="cols" value="3" min="1" />
+        </label>
+      </div>
+      <label class="field-label">
+        <span class="label-primary">Size</span>
+        <span class="label-secondary">
+          The width and height of each individual chopped square images.
+        </span>
+        <input type="number" name="size" value="50" min="1" />
+      </label>
+      <fieldset class="radio-set">
+        <legend class="label-primary">Fit</legend>
+        <label class="radio-label">
+          <input
+            type="radio"
+            name="fit"
+            value="cover"
+            class="hidden-accessible"
+          />
+          <span class="radio-button"></span>
+          <span class="label-primary">Cover area</span>
+          <span class="label-secondary">Crop sides.</span>
+        </label>
+        <label class="radio-label">
+          <input
+            type="radio"
+            name="fit"
+            value="contain"
+            class="hidden-accessible"
+            checked
+          />
+          <span class="radio-button"></span>
+          <span class="label-primary">Contain inside area</span>
+          <span class="label-secondary">Adds transparent bars.</span>
+        </label>
+        <label class="radio-label">
+          <input
+            type="radio"
+            name="fit"
+            value="stretch"
+            class="hidden-accessible"
+          />
+          <span class="radio-button"></span>
+          <span class="label-primary">S t r e t c h</span>
+        </label>
+      </fieldset>
+    </form>
+
+    <script src="./jszip.min.js" charset="utf-8"></script>
+    <script type="module">
+      import { on } from '/reform/v1/index.js'
+
+      // Size in pixels of large displayed emoji (eg in emoji-only messages) in the
+      // Discord client
+      const DISPLAY_SIZE = 48
+
+      function calculateFit ({ width, height }, rows, cols, fit) {
+        if (fit === 'stretch') {
+          return {
+            baseX: 0,
+            baseY: 0,
+            stepX: width / cols,
+            stepY: height / rows
+          }
+        }
+        const size = (fit === 'cover' ? Math.min : Math.max)(
+          width / cols,
+          height / rows
+        )
+        return {
+          baseX: (width - size * cols) / 2,
+          baseY: (height - size * rows) / 2,
+          stepX: size,
+          stepY: size
+        }
+      }
+
+      let urls = []
+      let process = 0
+      on('output', async (emoji, { preview, rows, cols, size, fit }) => {
+        const processId = ++process
+        const rowLength = `${rows}`.length
+        const colLength = `${cols}`.length
+
+        while (emoji.firstChild) {
+          emoji.removeChild(emoji.firstChild)
+        }
+        emoji.style.gridTemplateRows = `repeat(${rows}, ${DISPLAY_SIZE}px)`
+        emoji.style.gridTemplateColumns = `repeat(${cols}, ${DISPLAY_SIZE}px)`
+
+        urls.forEach(URL.revokeObjectURL)
+        urls = []
+
+        const tile = calculateFit(preview.canvas, rows, cols, fit)
+        const canvas = document.createElement('canvas')
+        canvas.width = size
+        canvas.height = size
+        const c = canvas.getContext('2d')
+        const blobs = []
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            c.clearRect(0, 0, size, size)
+            c.drawImage(
+              preview.canvas,
+              tile.baseX + x * tile.stepX,
+              tile.baseY + y * tile.stepY,
+              tile.stepX,
+              tile.stepY,
+              0,
+              0,
+              size,
+              size
+            )
+            const blob = await new Promise(resolve => canvas.toBlob(resolve))
+            if (process !== processId) {
+              return
+            }
+            const url = URL.createObjectURL(blob)
+            urls.push(url)
+            const name = `${preview.canvas.dataset.name}-${x
+              .toString()
+              .padStart(colLength, '0')}-${y
+              .toString()
+              .padStart(rowLength, '0')}.png`
+            blobs.push({ blob, name })
+            const image = Object.assign(document.createElement('img'), {
+              src: url,
+              className: 'emoji'
+            })
+            image.style.width = DISPLAY_SIZE + 'px'
+            const download = Object.assign(document.createElement('a'), {
+              download: name,
+              href: url,
+              className: 'download'
+            })
+            download.append(image)
+            emoji.append(download)
+          }
+        }
+
+        const zip = new JSZip()
+        for (const { name, blob } of blobs) {
+          zip.file(name, blob)
+        }
+        const blob = await zip.generateAsync({ type: 'blob' })
+        if (process !== processId) {
+          return
+        }
+        return new File([blob], 'emoji.zip', blob)
+      })
+    </script>
+  </body>
+</html>

@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Intense contrast</title>
+    <meta
+      name="description"
+      content="Maximizes the differences between pixels to reveal badly smudged out names"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#4fa1a7" />
+
+    <link rel="stylesheet" type="text/css" href="/sheep3.css" />
+    <link rel="stylesheet" type="text/css" href="/reform/v1/index.css" />
+    <script src="/sheep3.js" charset="utf-8"></script>
+    <style>
+      #previewDiv {
+        cursor: crosshair;
+        touch-action: none;
+        position: relative;
+      }
+      #highContrast {
+        position: absolute;
+        inset: 0;
+        border-color: transparent;
+      }
+    </style>
+  </head>
+  <body>
+    <form class="main" role="main">
+      <h1>Intense contrast</h1>
+      <p>
+        Exaggerate differences between pixels. Works best if you select a region
+        of similarly coloured pixels. It usually reveals compression artefacts
+        but it may also reveal poorly (eg with a translucent pen texture)
+        smudged out names in screenshots.
+      </p>
+      <p>
+        This gets the minimum and maximum R, G, and B values in the region and
+        scales each channel up, so one differently coloured pixel can skew
+        results quite a bit.
+      </p>
+
+      <div class="col-io reform:io">
+        <label class="input-controls file">
+          <input
+            type="file"
+            name="image"
+            accept="image/*"
+            class="hidden-accessible reform:image-input reform:paste-target"
+            data-default="./intense-contrast-default.png"
+          />
+          <span class="icon icon-upload"></span>
+          <span class="file-label">Choose, drop, or paste an image</span>
+          <span class="file-name">No file selected</span>
+        </label>
+        <div class="image-content input-content">
+          <div id="previewDiv" data-deps="image &highContrast">
+            <canvas data-will-read-frequently="true"></canvas>
+            <canvas
+              id="highContrast"
+              data-deps="image previewDiv method"
+            ></canvas>
+          </div>
+        </div>
+      </div>
+
+      <fieldset class="radio-set">
+        <legend class="label-primary">Method</legend>
+        <label class="radio-label">
+          <input
+            type="radio"
+            name="method"
+            value="primitive"
+            class="hidden-accessible"
+          />
+          <span class="radio-button"></span>
+          <span class="label-content">
+            <span class="label-primary">Primitive</span>
+            <span class="label-secondary">
+              Each channel of each pixel is scaled such that the darkest colour
+              in the region becomes black and the lightest becomes white (but
+              each channel is independent, so the hue will change).
+            </span>
+          </span>
+        </label>
+        <label class="radio-label">
+          <input
+            type="radio"
+            name="method"
+            value="lightened"
+            class="hidden-accessible"
+          />
+          <span class="radio-button"></span>
+          <span class="label-content">
+            <span class="label-primary">Lightened</span>
+            <span class="label-secondary">
+              Like primitive, but a square root function is applied to make
+              differences in dark pixels more obvious by making the pixels
+              lighter.
+            </span>
+          </span>
+        </label>
+        <label class="radio-label">
+          <input
+            type="radio"
+            name="method"
+            value="accentuated"
+            class="hidden-accessible"
+          />
+          <span class="radio-button"></span>
+          <span class="label-content">
+            <span class="label-primary">Accentuated</span>
+            <span class="label-secondary">
+              Each channel value is multiplied by 7 so that the differences in
+              pixel colours are exaggerated. To prevent lighter colours from
+              being capped at white, mod 255 is applied so they'll just wrap
+              around to black; since this is independent of the other channels,
+              the hue will change.
+            </span>
+          </span>
+        </label>
+        <label class="radio-label">
+          <input
+            type="radio"
+            name="method"
+            value="unique"
+            class="hidden-accessible"
+            checked
+          />
+          <span class="radio-button"></span>
+          <span class="label-content">
+            <span class="label-primary">Unique</span>
+            <span class="label-secondary">
+              Like accentuated, but the values are multiplied by 50, so each
+              coloured pixel effectively has a unique colour that is very
+              different from a similar one. A chunk of the same colour indicates
+              that all the pixels in that chunk are the exact same.
+            </span>
+          </span>
+        </label>
+      </fieldset>
+    </form>
+    <script type="module">
+      import { on } from '/reform/v1/index.js'
+
+      const methods = {
+        primitive: (channel, min, max) => {
+          return ((channel - min) / (max - min)) * 255
+        },
+        lightened: (channel, min, max) => {
+          return Math.sqrt((channel - min) / (max - min)) * 255
+        },
+        accentuated: (channel, min, max) => {
+          return (channel * 7) % 255
+        },
+        unique: (channel, min, max) => {
+          return (channel * 50) % 255
+        }
+      }
+
+      function processImage (
+        context,
+        func,
+        imageData,
+        { left, top, width, height }
+      ) {
+        const data = context.createImageData(width, height)
+        const endX = left + width
+        const endY = top + height
+        let minR = 255,
+          maxR = 0,
+          minG = 255,
+          maxG = 0,
+          minB = 255,
+          maxB = 0
+        for (let x = left; x < endX; x++) {
+          for (let y = top; y < endY; y++) {
+            const index = (y * imageData.width + x) * 4
+            if (imageData.data[index] < minR) minR = imageData.data[index]
+            if (imageData.data[index] > maxR) maxR = imageData.data[index]
+            if (imageData.data[index + 1] < minG)
+              minG = imageData.data[index + 1]
+            if (imageData.data[index + 1] > maxG)
+              maxG = imageData.data[index + 1]
+            if (imageData.data[index + 2] < minB)
+              minB = imageData.data[index + 2]
+            if (imageData.data[index + 2] > maxB)
+              maxB = imageData.data[index + 2]
+          }
+        }
+        for (let x = 0; x < width; x++) {
+          for (let y = 0; y < height; y++) {
+            const index = ((top + y) * imageData.width + left + x) * 4
+            const newIndex = (y * width + x) * 4
+            data.data[newIndex] = func(imageData.data[index], minR, maxR)
+            data.data[newIndex + 1] = func(
+              imageData.data[index + 1],
+              minG,
+              maxG
+            )
+            data.data[newIndex + 2] = func(
+              imageData.data[index + 2],
+              minB,
+              maxB
+            )
+            data.data[newIndex + 3] = 255
+          }
+        }
+        context.putImageData(data, left, top)
+      }
+
+      let cleanup
+      on('previewDiv', (div, { image: { canvas }, callback }) => {
+        cleanup?.()
+
+        let regionSetter
+        const handlePointerDown = e => {
+          if (!regionSetter && e.which === 1) {
+            const rect = canvas.getBoundingClientRect()
+            const scale = canvas.height / rect.height
+            regionSetter = {
+              pointer: e.pointerId,
+              initX: Math.floor((e.clientX - rect.left) * scale),
+              initY: Math.floor((e.clientY - rect.top) * scale),
+              dragging: false,
+              rect,
+              scale
+            }
+            div.setPointerCapture(e.pointerId)
+          }
+        }
+        const handlePointerMove = e => {
+          if (regionSetter?.pointer === e.pointerId) {
+            regionSetter.dragging = true
+            const { initX, initY, rect, scale } = regionSetter
+            const mouseX = Math.floor(
+              Math.max(
+                Math.min(
+                  e.clientX - regionSetter.rect.left,
+                  regionSetter.rect.width
+                ),
+                0
+              ) * regionSetter.scale
+            )
+            const mouseY = Math.floor(
+              Math.max(
+                Math.min(
+                  e.clientY - regionSetter.rect.top,
+                  regionSetter.rect.height
+                ),
+                0
+              ) * regionSetter.scale
+            )
+            const minX = Math.min(initX, mouseX)
+            const minY = Math.min(initY, mouseY)
+            callback({
+              left: minX,
+              top: minY,
+              width: Math.max(Math.max(initX, mouseX) - minX, 1),
+              height: Math.max(Math.max(initY, mouseY) - minY, 1)
+            })
+          }
+        }
+        const handlePointerEnd = e => {
+          if (regionSetter?.pointer === e.pointerId) {
+            regionSetter = null
+          }
+        }
+        div.addEventListener('pointerdown', handlePointerDown)
+        div.addEventListener('pointermove', handlePointerMove)
+        div.addEventListener('pointerup', handlePointerEnd)
+        div.addEventListener('pointercancel', handlePointerEnd)
+
+        cleanup = () => {
+          div.removeEventListener('pointerdown', handlePointerDown)
+          div.removeEventListener('pointermove', handlePointerMove)
+          div.removeEventListener('pointerup', handlePointerEnd)
+          div.removeEventListener('pointercancel', handlePointerEnd)
+        }
+      })
+
+      on('highContrast', (context, { method, image, previewDiv }) => {
+        context.canvas.width = image.canvas.width
+        context.canvas.height = image.canvas.height
+        processImage(
+          context,
+          methods[method],
+          image.getImageData(0, 0, image.canvas.width, image.canvas.height),
+          previewDiv
+        )
+      })
+    </script>
+  </body>
+</html>

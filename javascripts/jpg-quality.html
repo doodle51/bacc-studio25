@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>JPG quality</title>
+    <meta charset="UTF-8" />
+    <meta
+      name="description"
+      content="JavaScript lets you set how crappy your JPG is lol"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#4fa1a7" />
+
+    <link rel="stylesheet" type="text/css" href="/sheep3.css" />
+    <link rel="stylesheet" type="text/css" href="/reform/v1/index.css" />
+    <script src="/sheep3.js" charset="utf-8"></script>
+  </head>
+  <body>
+    <form class="main" role="main">
+      <h1>JPEG compression artifacts</h1>
+      <p>
+        Intentionally add JPEG compression artifacts to any image for the
+        ✨aesthetic✨.
+      </p>
+      <div class="two-col-io reform:io">
+        <label class="input-controls file">
+          <input
+            type="file"
+            name="image"
+            accept="image/*"
+            class="hidden-accessible reform:image-input reform:paste-target"
+          />
+          <span class="icon icon-upload"></span>
+          <span class="file-label">Choose, drop, or paste an image</span>
+          <span class="file-name">No file selected</span>
+        </label>
+        <div class="image-content input-content"><canvas></canvas></div>
+        <div class="image-content output-content">
+          <img id="output" data-deps="image quality format shrink" />
+        </div>
+        <div class="output-controls">
+          <a class="file download">
+            <span class="icon icon-download"></span>
+            <span class="file-label">Download</span>
+            <span class="file-name">No file available</span>
+          </a>
+          <button
+            type="button"
+            class="icon icon-copy"
+            data-output="output"
+            aria-label="Copy"
+          ></button>
+          <button
+            type="button"
+            class="icon icon-share"
+            data-output="output"
+            aria-label="Share"
+          ></button>
+        </div>
+      </div>
+
+      <div class="field-label range-wrapper">
+        <label class="range-label">
+          <span class="label-primary">Quality</span>
+          <input
+            type="range"
+            name="quality"
+            value="0.1"
+            min="0"
+            max="1"
+            step="any"
+          />
+        </label>
+        <input
+          type="number"
+          name="quality"
+          value="0.1"
+          min="0"
+          max="1"
+          step="0.01"
+          aria-label="Quality value"
+        />
+      </div>
+
+      <fieldset class="radio-set">
+        <legend class="label-primary">Compression algorithm</legend>
+        <label class="radio-label">
+          <input
+            type="radio"
+            name="format"
+            value="image/jpeg"
+            class="hidden-accessible"
+            checked
+          />
+          <span class="radio-button"></span>
+          <span class="label-primary">JPEG</span>
+          <span class="label-secondary">
+            The classic compressed image format. Does not support transparency.
+          </span>
+        </label>
+        <label class="radio-label">
+          <input
+            type="radio"
+            name="format"
+            value="image/webp"
+            class="hidden-accessible"
+          />
+          <span class="radio-button"></span>
+          <span class="label-primary">WebP</span>
+          <span class="label-secondary">
+            A relatively new format by Google. Supports transparency.
+          </span>
+        </label>
+      </fieldset>
+
+      <div class="field-label range-wrapper">
+        <label class="range-label">
+          <span class="label-primary">Shrink factor</span>
+          <span class="label-secondary">
+            For high resolution images, the compression artifacts aren't as
+            apparent. This shrinks the image first, compresses, then scales it
+            back up.
+          </span>
+          <input
+            type="range"
+            name="shrink"
+            value="1"
+            min="1"
+            max="10"
+            step="any"
+          />
+        </label>
+        <input
+          type="number"
+          name="shrink"
+          value="1"
+          min="1"
+          max="10"
+          step="0.01"
+          aria-label="Shrink factor value"
+        />
+      </div>
+    </form>
+
+    <script type="module">
+      import { on } from '/reform/v1/index.js'
+
+      on(
+        'output',
+        async (image, { image: { canvas }, quality, format, shrink }) => {
+          const original = canvas
+          let context
+          if (shrink > 1) {
+            const newCanvas = document.createElement('canvas')
+            newCanvas.width = canvas.width / shrink
+            newCanvas.height = canvas.height / shrink
+            context = newCanvas.getContext('2d')
+            context.drawImage(canvas, 0, 0, newCanvas.width, newCanvas.height)
+            canvas = newCanvas
+          }
+          let url = canvas.toDataURL(format, quality)
+          image.src = url
+          if (shrink > 1) {
+            await new Promise((resolve, reject) => {
+              image.addEventListener('load', resolve)
+              image.addEventListener('error', reject)
+            })
+            canvas.width = original.width
+            canvas.height = original.height
+            context.drawImage(image, 0, 0, canvas.width, canvas.height)
+            url = canvas.toDataURL(format, quality)
+            image.src = url
+          }
+          const blob = await fetch(url).then(r => r.blob())
+          return new File(
+            [blob],
+            canvas.dataset.name + (format === 'image/jpeg' ? '.jpg' : '.webp'),
+            blob
+          )
+        }
+      )
+    </script>
+  </body>
+</html>

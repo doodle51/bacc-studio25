@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Rounded decimal to fraction</title>
+    <meta
+      name="description"
+      content="Lists some possible integer ratios that may have produced a rounded decimal value."
+    />
+
+    <link rel="stylesheet" type="text/css" href="/sheep3.css" />
+    <script src="/sheep3.js" charset="utf-8"></script>
+
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          'Helvetica Neue', Arial, sans-serif, 'Apple Color Emoji',
+          'Segoe UI Emoji', 'Segoe UI Symbol';
+        background-color: #0f172a;
+        color: #94a3b8;
+        font-size: 24px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 20px;
+        gap: 10px;
+      }
+      input {
+        -webkit-appearance: none;
+        appearance: none;
+        border: none;
+        background: none;
+        color: inherit;
+        font: inherit;
+      }
+
+      .input,
+      .span {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 5px;
+        padding: 10px 20px;
+      }
+      .input {
+        flex-direction: column;
+        gap: 5px;
+        padding: 10px;
+      }
+      .input p {
+        margin: 0;
+      }
+      .input-line {
+        display: flex;
+        gap: 10px;
+      }
+      #input {
+        text-align: right;
+        flex: auto;
+        color: #f1f5f9;
+        background-color: #334155;
+        border: 1px solid #475569;
+        border-radius: 2px;
+      }
+      .note {
+        font-size: 16px;
+      }
+      a {
+        color: #22d3ee;
+        text-decoration: none;
+      }
+      a:hover,
+      a:focus {
+        text-decoration: underline;
+      }
+
+      #results {
+        margin: 0;
+        margin-bottom: 100vh;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        flex-direction: column;
+        gap: 10px;
+      }
+      #results li {
+        display: grid;
+        grid-template-columns: 1fr 40px 1fr;
+        animation: appear 0.5s both;
+      }
+      @keyframes appear {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .fraction {
+        font-weight: bold;
+        color: #f8fafc;
+        font-size: 30px;
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+        border-right: none;
+        padding-right: 0;
+        margin-left: auto;
+      }
+      .equals {
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+        padding: 10px 0;
+      }
+      .decimal {
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+        border-left: none;
+        padding-left: 0;
+        margin-right: auto;
+      }
+      .significant {
+        color: #f8fafc;
+        font-weight: bold;
+      }
+      .round-up-digit {
+        text-decoration: underline;
+        text-decoration-color: #334155;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="input">
+      <p class="input-line">
+        <input
+          type="text"
+          inputmode="numeric"
+          value="0.9649"
+          aria-label="Decimal"
+          id="input"
+          autofocus
+        />
+        &approx;
+      </p>
+      <p class="note">
+        (Use
+        <a href="https://sheeptester.github.io/hello-world/sigfig.html"
+          >sig figs</a
+        >)
+      </p>
+    </div>
+    <ul id="results"></ul>
+    <script type="module">
+      import { Rational } from 'https://sheeptester.github.io/words-go-here/misc/Rational.js'
+      import { SigFigNumber } from './sigfigs.js'
+
+      const input = document.getElementById('input')
+      const results = document.getElementById('results')
+
+      function * decToFrac (decimal, tolerance = 1) {
+        if (!Number.isFinite(decimal)) {
+          return
+        }
+        const match = (a, b) => a >= b - tolerance && a <= b + tolerance
+        let denominator = 1
+        while (true) {
+          const lower = Math.floor((decimal - tolerance) * denominator)
+          const upper = Math.ceil((decimal + tolerance) * denominator)
+          for (let n = lower; n <= upper; n++) {
+            if (match(n / denominator, decimal)) {
+              yield [n, denominator]
+            }
+            if (n + 1 === n) {
+              // Large floating point integer
+              if (n === upper) {
+                break
+              } else {
+                n = upper
+              }
+            }
+          }
+          denominator++
+        }
+      }
+
+      let number, generator
+      function update () {
+        while (results.firstChild) {
+          results.removeChild(results.firstChild)
+        }
+
+        number = SigFigNumber.from(input.value.replaceAll('−', '-'))
+        generator =
+          number.value === 0
+            ? decToFrac(0, 0)
+            : decToFrac(number.value, +`1e${number.lsdExponent}` / 2)
+        addResults()
+      }
+      function addResults () {
+        const ideal = number.value
+        let i = 0
+        let failures = 0
+        while (
+          document.documentElement.scrollHeight <
+            window.scrollY + window.innerHeight * 2 &&
+          failures < 1e4
+        ) {
+          const next = generator.next()
+          if (next.done) {
+            break
+          }
+          const [numerator, denominator] = next.value
+          if (
+            new Rational(BigInt(numerator), BigInt(denominator)).simplify()
+              .denominator !== BigInt(denominator)
+          ) {
+            failures++
+            continue
+          }
+          let quotient = String(numerator / denominator)
+          const roundUp = numerator / denominator < number.value
+          let sfEndIndex = null
+          let roundDigitIndex = null
+          let sigfigs = number.sigFigs
+          let encounteredNonzero = false
+          for (let i = 0; i < quotient.length; i++) {
+            if (quotient[i] === 'e') {
+              if (sfEndIndex === null) {
+                sfEndIndex = i - 1
+              }
+              break
+            } else if (/\d/.test(quotient[i])) {
+              if (quotient[i] === '0') {
+                if (!encounteredNonzero) {
+                  continue
+                }
+              } else {
+                encounteredNonzero = true
+              }
+              if (sfEndIndex !== null) {
+                roundDigitIndex = i + 1
+                break
+              }
+              sigfigs--
+              if (sigfigs === 0) {
+                sfEndIndex = i + 1
+                if (!roundUp) {
+                  break
+                }
+              }
+            }
+          }
+          if (sfEndIndex === null) {
+            if (!quotient.includes('.')) {
+              quotient += '.'
+            }
+            quotient += '0'.repeat(sigfigs)
+            sfEndIndex = quotient.length
+          }
+          roundDigitIndex ??= sfEndIndex
+
+          const quotientSpan = Object.assign(document.createElement('span'), {
+            className: 'span decimal'
+          })
+          quotientSpan.append(
+            Object.assign(document.createElement('span'), {
+              className: 'significant',
+              textContent: quotient.slice(0, sfEndIndex)
+            }),
+            Object.assign(document.createElement('span'), {
+              className: 'round-up-digit',
+              textContent: quotient.slice(sfEndIndex, roundDigitIndex)
+            }),
+            quotient.slice(roundDigitIndex)
+          )
+          // Would be cool if it showed ellipses/used the approx. symbol as
+          // appropriate. Could use .toPrecision(100).replace(/0+$/, ''), then
+          // determine if the denominator is in powers of 2 and 5.
+
+          const li = document.createElement('li')
+          li.style.animationDelay = `${i * 0.1}s`
+          li.append(
+            Object.assign(document.createElement('span'), {
+              className: 'span fraction',
+              textContent: `${numerator}/${denominator}`
+            }),
+            Object.assign(document.createElement('span'), {
+              className: 'span equals',
+              textContent: ' = '
+            }),
+            quotientSpan
+          )
+          results.append(li)
+          i++
+        }
+      }
+      input.addEventListener('input', update)
+      update()
+      window.addEventListener('scroll', addResults)
+    </script>
+  </body>
+</html>

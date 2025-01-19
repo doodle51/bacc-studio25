@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>SSTV encoder (Scottie S1)</title>
+    <meta
+      name="description"
+      content="Encode a 320 by 256 image into SSTV and blast it out of your speakers."
+    />
+
+    <link rel="stylesheet" type="text/css" href="/sheep3.css" />
+    <script src="/sheep3.js" charset="utf-8"></script>
+
+    <style>
+      #preview {
+        image-rendering: crisp-edges;
+        image-rendering: pixelated;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+      }
+      audio {
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <p>
+      <label>
+        Select an image:
+        <input type="file" id="image" accept="image/*" autofocus />
+        (or paste an image here).
+      </label>
+      Your image will be forcefully stretched to 320 by 256 pixels.
+    </p>
+    <button id="play">Play</button>
+    <button id="stop" disabled>Stop</button>
+    <button id="render">Render</button>
+    <p><canvas id="preview" width="320" height="256"></canvas></p>
+    <div id="audio"></div>
+    <p>
+      My friends recommended using
+      <a href="https://hamsoft.ca/pages/mmsstv.php">MMSSTV</a> to decode the
+      image. You can blast this out of your speakers for your microphone to pick
+      up to try it out.
+    </p>
+    <p>
+      Much thanks to
+      <a href="https://en.wikipedia.org/wiki/Slow-scan_television">Wikipedia</a>
+      and
+      <a
+        href="https://radio.clubs.etsit.upm.es/blog/2019-08-10-sstv-scottie1-encoder/"
+        >this based af blog post</a
+      >
+      for specifying the frequencies and timing for all the little beeps.
+    </p>
+    <script>
+      const elems = {
+        image: document.getElementById('image'),
+        play: document.getElementById('play'),
+        stop: document.getElementById('stop'),
+        render: document.getElementById('render'),
+        preview: document.getElementById('preview'),
+        audio: document.getElementById('audio')
+      }
+      /** @type {CanvasRenderingContext2D} */
+      const c = elems.preview.getContext('2d', { willReadFrequently: true })
+
+      const WIDTH = 320
+      const HEIGHT = 256
+
+      function loadImage (file) {
+        const url = URL.createObjectURL(file)
+        image = new Image()
+        image.addEventListener('load', () => {
+          c.drawImage(image, 0, 0, WIDTH, HEIGHT)
+          URL.revokeObjectURL(url)
+        })
+        image.src = url
+      }
+      elems.image.addEventListener('change', () => {
+        if (elems.image.files[0]) {
+          loadImage(elems.image.files[0])
+        }
+      })
+      document.addEventListener('paste', e => {
+        if (e.clipboardData.files[0]) {
+          loadImage(e.clipboardData.files[0])
+        }
+      })
+      fetch('./sstv-test-image.png')
+        .then(r => r.blob())
+        .then(loadImage)
+
+      /** @type {AudioContext} */
+      let context
+
+      class Tone {
+        #oscillator
+        #start
+        #time
+
+        /**
+         * @param {AudioContext} context
+         * @param {number} [delay]
+         */
+        constructor (context, delay = 0) {
+          this.#oscillator = context.createOscillator()
+          this.#oscillator.connect(context.destination)
+          this.#start = this.#time = context.currentTime + delay
+        }
+
+        /**
+         * @param {number} frequency - In Hz.
+         * @param {number} duration - In ms.
+         */
+        tone (frequency, duration) {
+          this.#oscillator.frequency.setValueAtTime(frequency, this.#time)
+          this.#time += duration / 1000
+        }
+
+        mode (mode) {
+          const bits = Array.from(
+            mode.toString(2).padStart(7, '0'),
+            Number
+          ).reverse()
+          bits.push(bits.reduce((cum, curr) => cum ^ curr, 0))
+          for (const bit of bits) {
+            this.tone(bit ? 1100 : 1300, 30)
+          }
+          this.tone(1200, 30)
+        }
+
+        play () {
+          return new Promise(resolve => {
+            this.#oscillator.start(this.#start)
+            this.#oscillator.stop(this.#time)
+            this.#oscillator.addEventListener('ended', () => {
+              this.#oscillator.disconnect()
+              resolve()
+            })
+          })
+        }
+
+        stop () {
+          this.#oscillator.stop()
+        }
+      }
+
+      /** In seconds. */
+      const DELAY = 0.1
+      const HELLO = [1900, 1500, 1900, 1500, 2300, 1500, 2300, 1500]
+      /** Scottie S1. */
+      const MODE = 60
+      const COLOR_LOW = 1500
+      const COLOR_HIGH = 2300
+
+      /**
+       * @param {ImageData} imageData
+       * @param {Tone} tone
+       */
+      function writeImageToTone (imageData, tone) {
+        for (const freq of HELLO) {
+          tone.tone(freq, 100)
+        }
+        tone.tone(1900, 300)
+        tone.tone(1200, 10)
+        tone.tone(1900, 300)
+        tone.tone(1200, 30)
+        tone.mode(MODE)
+
+        // Start sync (first line only)
+        tone.tone(1200, 9)
+        for (let y = 0; y < HEIGHT; y++) {
+          const start = y * WIDTH * 4
+
+          for (const channel of [1, 2, 0]) {
+            if (channel === 0) {
+              // Horizontal sync (red only)
+              tone.tone(1200, 9)
+            }
+            // Seperator
+            tone.tone(1500, 1.5)
+            for (let x = 0; x < WIDTH; x++) {
+              const value = imageData.data[start + x * 4 + channel]
+              tone.tone(
+                COLOR_LOW + (COLOR_HIGH - COLOR_LOW) * (value / 255),
+                0.432
+              )
+            }
+          }
+        }
+      }
+
+      elems.play.addEventListener('click', () => {
+        context ??= new AudioContext()
+        const tone = new Tone(context, DELAY)
+        writeImageToTone(c.getImageData(0, 0, WIDTH, HEIGHT), tone)
+
+        elems.play.disabled = true
+        elems.stop.disabled = false
+        tone.play().then(() => {
+          elems.play.disabled = false
+          elems.stop.disabled = true
+        })
+
+        elems.stop.onclick = () => tone.stop()
+      })
+
+      const encoder = new TextEncoder()
+      function header (byteCount, sampleRate, channelCount = 1) {
+        // https://isip.piconepress.com/projects/speech/software/tutorials/production/fundamentals/v1.0/section_02/s02_01_p05.html
+        // https://github.com/higuma/wav-audio-encoder-js/blob/master/lib/WavAudioEncoder.js
+        // wav files are little endian
+        const header = new DataView(new ArrayBuffer(44))
+        const byteView = new Uint8Array(header.buffer)
+        byteView.set(encoder.encode('RIFF'), 0)
+        header.setUint32(4, byteCount + 36, true)
+        byteView.set(encoder.encode('WAVE'), 8)
+        byteView.set(encoder.encode('fmt '), 12)
+        header.setUint32(16, 16, true)
+        header.setUint16(20, 1, true)
+        header.setUint16(22, channelCount, true)
+        header.setUint32(24, sampleRate, true)
+        header.setUint32(28, sampleRate * 4, true)
+        header.setUint16(32, channelCount * 2, true)
+        header.setUint16(34, 16, true)
+        byteView.set(encoder.encode('data'), 36)
+        header.setUint32(40, byteCount, true)
+        return header
+      }
+
+      /**
+       * In milliseconds.
+       * 8*100+300*2+10+30+9*30+9+256*(9+1.5*3+0.432*320*3)
+       */
+      const TOTAL_LENGTH = 111343.32
+      const SAMPLE_RATE = 44100
+      elems.render.addEventListener('click', async () => {
+        elems.render.disabled = true
+
+        const context = new OfflineAudioContext({
+          numberOfChannels: 1,
+          length: Math.ceil((TOTAL_LENGTH * SAMPLE_RATE) / 1000),
+          sampleRate: SAMPLE_RATE
+        })
+        const tone = new Tone(context)
+        writeImageToTone(c.getImageData(0, 0, WIDTH, HEIGHT), tone)
+        tone.play()
+
+        // await new Promise(resolve => setTimeout(resolve, 1000))
+
+        const buffer = await context.startRendering()
+        const floats = buffer.getChannelData(0)
+        // wav format is little endian; 2 bytes per sample (for i16)
+        const view = new DataView(new ArrayBuffer(floats.length * 2))
+        for (const [i, float] of floats.entries()) {
+          view.setInt16(i * 2, Math.min(Math.max(float, -1), 1) * 0x7fff, true)
+        }
+        const blob = new Blob([header(view.byteLength, SAMPLE_RATE), view], {
+          type: 'audio/wav'
+        })
+        const audio = new Audio()
+        audio.src = URL.createObjectURL(blob)
+        audio.controls = true
+        elems.audio.prepend(audio)
+
+        elems.render.disabled = false
+      })
+    </script>
+  </body>
+</html>

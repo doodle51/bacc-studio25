@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Voice control</title>
+    <meta charset="UTF-8" />
+    <meta
+      name="description"
+      content="Your voice box has a lot of potential; it's a shame to see it go to waste."
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#4fa1a7" />
+
+    <link rel="stylesheet" type="text/css" href="/sheep3.css" />
+    <link rel="stylesheet" type="text/css" href="/reform/v1/index.css" />
+    <script src="/sheep3.js" charset="utf-8"></script>
+    <script src="./_dom.js" charset="utf-8"></script>
+  </head>
+  <body>
+    <form class="main" role="main" id="speaking" action="javascript:">
+      <h1>Speech</h1>
+      <p>
+        This demonstrates your browser's built-in
+        <a
+          class="link"
+          href="https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition"
+          >speech recognition (speech-to-text)</a
+        >
+        and
+        <a
+          class="link"
+          href="https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis"
+          >speech synthesis (text-to-speech)</a
+        >
+        capabilities.
+      </p>
+
+      <label class="field-label">
+        <span class="label-primary">Speaker accent</span>
+        <select name="voice">
+          <option value="SELECT" selected disabled>Choose one</option>
+        </select>
+      </label>
+      <!-- <p>I agree to only use the following words: <input type="text" id="words" value="one two three"></p> -->
+      <p>Are you ready to speak?</p>
+
+      <div class="button-row">
+        <button
+          type="submit"
+          class="button primary-btn"
+          name="ready"
+          data-deps="voice speaking"
+        >
+          I speak now
+        </button>
+      </div>
+    </form>
+    <script type="module">
+      import { on } from '/reform/v1/index.js'
+
+      const SpeechRecognition =
+        window.SpeechRecognition || window.webkitSpeechRecognition
+      const SpeechGrammarList =
+        window.SpeechGrammarList || window.webkitSpeechGrammarList
+
+      let voices = []
+      on('voice', voiceSelect => {
+        window.speechSynthesis.onvoiceschanged = () => {
+          voices = window.speechSynthesis.getVoices()
+          voiceSelect.innerHTML = ''
+          voiceSelect.appendChild(
+            createFragment([
+              createElement('option', {
+                children: ['Choose one'],
+                attributes: { value: 'SELECT', selected: true }
+              }),
+              ...voices.map((voice, index) =>
+                createElement('option', {
+                  children: [voice.name],
+                  attributes: { value: index }
+                })
+              )
+            ])
+          )
+        }
+      })
+
+      // const wordsInput = document.getElementById('words');
+
+      let activeVoice
+      on({ deps: ['voice'] }, (_, { voice }) => {
+        window.speechSynthesis.cancel()
+        if (voice !== 'SELECT') {
+          activeVoice = voices[voice]
+          say('Down with SELF.')
+        }
+      })
+      on('ready', (btn, { voice, speaking }) => {
+        btn.disabled = voice === 'SELECT' || speaking
+        btn.textContent = speaking
+          ? 'Listening...'
+          : voice === 'SELECT'
+          ? 'Please select a voice'
+          : 'I speak now'
+      })
+      function say (text, voice) {
+        window.speechSynthesis.cancel()
+        const speech = new SpeechSynthesisUtterance(text)
+        speech.voice = activeVoice
+        window.speechSynthesis.speak(speech)
+        console.log(text)
+      }
+      const recognition = new SpeechRecognition()
+      recognition.lang = 'en-US'
+      recognition.interimResults = false
+      recognition.maxAlternatives = 3
+      on('speaking', (form, { callback }) => {
+        callback(false)
+        form.addEventListener('submit', async () => {
+          // const grammar = `#JSGF V1.0; grammar colors; public <color> = ${wordsInput.value.split(' ').join(' | ')} ;`;
+          // const grammarList = new SpeechGrammarList();
+          // grammarList.addFromString(grammar, 1);
+          // recognition.grammars = grammarList;
+          callback(true)
+
+          recognition.onresult = e => {
+            say(
+              `Perhaps ${Array.from(
+                e.results[0],
+                ({ transcript, confidence }) =>
+                  `you said "${transcript}" (${Math.round(
+                    confidence * 100
+                  )}% confident on this)`
+              ).join(', or maybe ')}.`
+            )
+          }
+          recognition.onspeechend = () => {
+            recognition.stop()
+            callback(false)
+          }
+          recognition.onnomatch = () => {
+            say('What?')
+          }
+          recognition.onerror = e => {
+            say('Problem!')
+            console.log(e)
+          }
+
+          recognition.start()
+        })
+      })
+    </script>
+  </body>
+</html>

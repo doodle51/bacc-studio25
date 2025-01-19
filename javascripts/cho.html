@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Empirical formula of CHO combustion calculator</title>
+    <meta
+      name="description"
+      content="Calculates the empirical formula of a compound containing only carbon, hydrogen, and oxygen based on the amount of CO2 and H2O produced."
+    />
+
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.css"
+      integrity="sha384-AfEj0r4/OFrOo5t7NnNe46zW/tFgW6x/bCJG8FqQCEo3+Aro6EYUG4+cU+KJWu/X"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" type="text/css" href="/sheep3.css" />
+
+    <script src="/sheep3.js" charset="utf-8"></script>
+
+    <style>
+      input[type='number'] {
+        width: 10ch;
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <p>
+      The combustion of <input type="number" id="cho" value="6.90" /> g of an
+      unknown organic compound containing only carbon, hydrogen and oxygen
+      produced
+      <input type="number" id="co2" value="15.7" />
+      <select id="co2-units">
+        <option value="grams" selected>g</option>
+        <option value="moles">mol</option>
+      </select>
+      CO<sub>2</sub> and <input type="number" id="h2o" value="6.42" />
+      <select id="h2o-units">
+        <option value="grams" selected>g</option>
+        <option value="moles">mol</option>
+      </select>
+      H<sub>2</sub>O.
+    </p>
+    <div id="output"></div>
+    <script type="module">
+      import katex from 'https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.mjs'
+      import { SigFigNumber } from './sigfigs.js'
+
+      // From Wikipedia
+      const MOLAR_MASS = {
+        CARBON: SigFigNumber.from('12.0107'),
+        HYDROGEN: SigFigNumber.from('1.00784'),
+        OXYGEN: SigFigNumber.from('15.999'),
+        CARBON_DIOXIDE: SigFigNumber.from('44.01'),
+        WATER: SigFigNumber.from('18.01528')
+      }
+      MOLAR_MASS.CO2 = MOLAR_MASS.CARBON.plus(MOLAR_MASS.OXYGEN.times(2))
+      MOLAR_MASS.H2O = MOLAR_MASS.HYDROGEN.times(2).plus(MOLAR_MASS.OXYGEN)
+
+      const inputs = {
+        cho: document.getElementById('cho'),
+        co2: document.getElementById('co2'),
+        co2Units: document.getElementById('co2-units'),
+        h2o: document.getElementById('h2o'),
+        h2oUnits: document.getElementById('h2o-units')
+      }
+      const output = document.getElementById('output')
+
+      const r = String.raw
+
+      function calculate () {
+        const steps = []
+        let co2 = SigFigNumber.from(inputs.co2.value)
+        if (inputs.co2Units.value === 'grams') {
+          const amount = co2
+          co2 = amount.times(MOLAR_MASS.CARBON_DIOXIDE.inverse())
+          steps.push(
+            r`${amount} \text{g CO}_2 \cdot \frac{\text{mol CO}_2}{${MOLAR_MASS.CARBON_DIOXIDE} \text{g CO}_2} = ${co2} \text{ mol CO}_2`
+          )
+        }
+        const c = co2
+        steps.push(
+          r`${co2} \text{ mol CO}_2 \cdot \frac{\text{mol C}}{\text{mol CO}_2} = ${c} \text{ mol C}`
+        )
+        let h2o = SigFigNumber.from(inputs.h2o.value)
+        if (inputs.h2oUnits.value === 'grams') {
+          const amount = h2o
+          h2o = amount.times(MOLAR_MASS.WATER.inverse())
+          steps.push(
+            r`${amount} \text{g H}_2\text{O} \cdot \frac{\text{mol H}_2\text{O}}{${MOLAR_MASS.WATER} \text{g H}_2\text{O}} = ${h2o} \text{ mol H}_2\text{O}`
+          )
+        }
+        const h = h2o.times(2)
+        steps.push(
+          r`${h2o} \text{ mol H}_2\text{O} \cdot \frac{2 \text{ mol H}}{\text{mol H}_2\text{O}} = ${h} \text{ mol H}`
+        )
+        const cho = SigFigNumber.from(inputs.cho.value)
+        const o = cho
+          .minus(c.times(MOLAR_MASS.CARBON))
+          .minus(h.times(MOLAR_MASS.HYDROGEN))
+          .times(MOLAR_MASS.OXYGEN.inverse())
+        steps.push(
+          r`\left(${cho} \text{g CHO} - ${c} \text{ mol C} \cdot \frac{${MOLAR_MASS.CARBON} \text{g C}}{\text{mol C}} - ${h} \text{ mol H} \cdot \frac{${MOLAR_MASS.HYDROGEN} \text{g H}}{\text{mol H}}\right) \cdot \frac{\text{mol O}}{${MOLAR_MASS.OXYGEN} \text{g O}} = ${o} \text{ mol O}`
+        )
+        let min = c
+        if (h < min) min = h
+        if (o < min) min = o
+        const coefficients = {
+          c: c.times(min.inverse()),
+          h: h.times(min.inverse()),
+          o: o.times(min.inverse())
+        }
+        steps.push(
+          r`\frac{${c} \text{ mol C}}{${min}} = ${coefficients.c},~\frac{${h} \text{ mol H}}{${min}} = ${coefficients.h},~\frac{${o} \text{ mol O}}{${min}} = ${coefficients.o}`
+        )
+        const { factor } = [1, 2, 3, 4, 5, 6, 7, 8, 9].reduce((acc, curr) => {
+          // Add up the error between each coefficient multiplied by `curr` and
+          // its rounded form to see how close they are to an integer
+          const offsets = Object.values(coefficients)
+            .map(n => n.value * curr)
+            .map(n => Math.abs(n - Math.round(n)))
+            .reduce((a, b) => a + b)
+          if (!acc || offsets < acc.offsets) {
+            return { offsets, factor: curr }
+          } else {
+            return acc
+          }
+        }, null)
+        const [roundedC, roundedH, roundedO] = [
+          coefficients.c,
+          coefficients.h,
+          coefficients.o
+        ].map(n => Math.round(n.value * factor))
+        if (factor !== 1) {
+          steps.push(
+            r`${coefficients.c} \cdot ${factor} \approx ${roundedC},~${coefficients.h} \cdot ${factor} \approx ${roundedH},~${coefficients.o} \cdot ${factor} \approx ${roundedO}`
+          )
+        }
+        steps.push(
+          r`\to \boxed{\text{C}${
+            roundedC === 1 ? '' : `_{${roundedC}}`
+          }\text{H}${roundedH === 1 ? '' : `_{${roundedH}}`}\text{O}${
+            roundedO === 1 ? '' : `_{${roundedO}}`
+          }}\text{ (Use your intuition to figure out more reasonable coefficients.)}`
+        )
+        output.innerHTML = steps
+          .map(step =>
+            katex.renderToString(step, {
+              throwOnError: true,
+              displayMode: true,
+              fleqn: true
+            })
+          )
+          .join('')
+      }
+
+      calculate()
+      document.addEventListener('input', calculate)
+    </script>
+  </body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Remove font and colours from copied text</title>
+    <meta
+      name="description"
+      content="Removes some formatting from text while keeping things like lists, italics, links, etc. so it can be pasted into a Google Doc with your own styling."
+    />
+    <meta name="theme-color" content="#4fa1a7" />
+
+    <link rel="stylesheet" type="text/css" href="/sheep3.css" />
+    <link rel="stylesheet" type="text/css" href="/reform/v1/index.css" />
+    <script src="/sheep3.js" charset="utf-8"></script>
+
+    <style>
+      #preview {
+        padding: 10px;
+        overflow: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <form class="main" role="main">
+      <h1>Remove formatting from text</h1>
+      <p>
+        Sometimes, I want to copy text from one site to a Google Doc or email
+        and keep the existing default text formatting that I already have,
+        rather than the text and background colour and font styles from the site
+        I copied from. I could use <kbd>ctrl + shift + V</kbd> to paste without
+        formatting, or <kbd>ctrl + \</kbd> to clear all formatting from selected
+        text. However, I also want to keep some formatting, such as
+        <em>italicized text</em>.
+      </p>
+      <ol>
+        <li><p>Paste text with formatting into the text box below.</p></li>
+        <li><p>Click the "Copy clean text" button.</p></li>
+      </ol>
+      <p>
+        The left text box shows the HTML that was in your clipboard, and the
+        right side shows the cleaned HTML.
+      </p>
+      <div class="two-col-io reform:io">
+        <label class="input-controls file">
+          <input
+            type="file"
+            accept="text/html"
+            name="input"
+            class="hidden-accessible reform:text-input reform:paste-target"
+          />
+          <span class="icon icon-upload"></span>
+          <span class="file-label">
+            Choose or drop an HTML file or paste below
+          </span>
+          <span class="file-name">No file selected</span>
+        </label>
+        <textarea
+          name="input"
+          aria-label="Paste text with formatting"
+          class="input-content code"
+          readonly
+        ></textarea>
+        <div class="output-content" id="preview" data-deps="input"></div>
+        <div class="output-controls">
+          <button type="button" data-output="output" class="reform:copy">
+            <span class="icon icon-copy"></span>
+            <span>Copy clean text</span>
+          </button>
+          <a
+            class="download icon-btn icon icon-download"
+            aria-label="Download"
+          ></a>
+          <button
+            type="button"
+            class="icon icon-share"
+            data-output="output"
+            aria-label="Share"
+          ></button>
+        </div>
+      </div>
+    </form>
+
+    <script type="module">
+      import { on } from '/reform/v1/index.js'
+
+      if (!('ClipboardItem' in window)) {
+        alert(
+          "Your browser doesn't support copying HTML. This won't work very well."
+        )
+      }
+      const input = document.getElementById('input')
+      const output = document.getElementById('output')
+      const preview = document.getElementById('preview')
+      const parser = new DOMParser()
+      // const blockList = [
+      //   'color',
+      //   'background-color',
+      //   'font-family',
+      //   'font-size',
+      //   'line-height'
+      // ]
+      const allowList = [
+        'font-style',
+        'font-weight',
+        'text-transform',
+        'text-decoration'
+      ]
+      on('preview', (preview, { input }) => {
+        const doc = parser.parseFromString(input, 'text/html')
+        for (const element of doc.querySelectorAll('[style]')) {
+          /** @type {HTMLElement} */
+          const elem = element
+          for (const prop of [...elem.style]) {
+            if (!allowList.includes(prop)) {
+              elem.style[prop] = null
+            }
+          }
+        }
+        for (const element of doc.querySelectorAll('[class]')) {
+          element.removeAttribute('class')
+        }
+        for (const element of [...doc.getElementsByTagName('style')]) {
+          element.remove()
+        }
+        // Replace <p> with <div> to remove margin
+        for (const element of [...doc.getElementsByTagName('p')]) {
+          element.outerHTML = element.outerHTML
+            .replace('<p', '<div')
+            .replace(/<\/p>$/, '</div>')
+        }
+        // Remove margin from other semantic elemens
+        for (const element of doc.querySelectorAll(
+          'h1, h2, h3, h4, h5, h6, ol, ul'
+        )) {
+          element.style.marginTop = '0'
+          element.style.marginBottom = '0'
+        }
+        const html = doc.documentElement.outerHTML
+        preview.innerHTML = html
+        return new File([html], 'clean.html', { type: 'text/html' })
+      })
+    </script>
+  </body>
+</html>
